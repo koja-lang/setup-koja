@@ -1,0 +1,49 @@
+name: Setup Koja
+description: Install the Koja compiler toolchain and add it to PATH
+author: koja-lang
+
+branding:
+  icon: package
+  color: green
+
+inputs:
+  koja-version:
+    description: >-
+      Exact Koja version to install (for example 0.16.0), or "latest".
+      Empty means latest unless koja-version-file is set.
+    required: false
+    default: ""
+  koja-version-file:
+    description: >-
+      Path to a file that names the Koja version. Supports
+      .tool-versions (asdf format) and koja.toml (the [project] koja
+      minimum version).
+    required: false
+    default: ""
+  token:
+    description: GitHub token for the releases API (latest-version lookup).
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  koja-version:
+    description: The resolved Koja version that was installed.
+    value: ${{ steps.install.outputs.koja-version }}
+  koja-path:
+    description: Directory the toolchain was installed into.
+    value: ${{ steps.install.outputs.koja-path }}
+
+runs:
+  using: composite
+  steps:
+    - id: install
+      shell: bash
+      env:
+        KOJA_VERSION_INPUT: ${{ inputs.koja-version }}
+        KOJA_VERSION_FILE: ${{ inputs.koja-version-file }}
+        GITHUB_TOKEN: ${{ inputs.token }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/install.sh"
+
+    - name: Register problem matcher
+      shell: bash
+      run: echo "::add-matcher::${GITHUB_ACTION_PATH}/problem-matcher.json"

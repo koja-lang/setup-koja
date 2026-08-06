@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
+      - name: actionlint
+        run: |
+          docker run --rm -v "$PWD":/repo --workdir /repo \
+            rhysd/actionlint:latest -color
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install pinned version
+        id: pinned
+        uses: ./
+        with:
+          koja-version: 0.16.0
+
+      - name: Assert pinned version
+        run: |
+          [ "${{ steps.pinned.outputs.koja-version }}" = "0.16.0" ]
+          koja --version | grep -F "0.16.0"
+
+      - name: Run a script
+        run: |
+          echo 'IO.puts("hello from ci")' > hello.kojs
+          [ "$(koja run hello.kojs)" = "hello from ci" ]
+
+      - name: Write .tool-versions
+        run: echo "koja 0.15.3" > .tool-versions
+      - uses: ./
+        id: from-tool-versions
+        with:
+          koja-version-file: .tool-versions
+      - name: Assert .tool-versions version
+        run: |
+          [ "${{ steps.from-tool-versions.outputs.koja-version }}" = "0.15.3" ]
+          koja --version | grep -F "0.15.3"
+
+      - name: Write koja.toml
+        run: |
+          printf '[project]\nname = "ci"\nkoja = "0.16.0"\n' > koja.toml
+      - uses: ./
+        id: from-koja-toml
+        with:
+          koja-version-file: koja.toml
+      - name: Assert koja.toml version
+        run: |
+          [ "${{ steps.from-koja-toml.outputs.koja-version }}" = "0.16.0" ]
+          koja --version | grep -F "0.16.0"
+
+      - name: Install latest
+        id: latest
+        uses: ./
+      - name: Assert latest resolved
+        run: |
+          [ -n "${{ steps.latest.outputs.koja-version }}" ]
+          koja --version | grep -F "${{ steps.latest.outputs.koja-version }}"
