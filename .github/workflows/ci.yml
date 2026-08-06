@@ -56,17 +56,20 @@ jobs:
           [ "${{ steps.from-tool-versions.outputs.koja-version }}" = "0.15.3" ]
           koja --version | grep -F "0.15.3"
 
-      - name: Write koja.toml
+      - name: Write koja.toml with a partial version
         run: |
-          printf '[project]\nname = "ci"\nkoja = "0.16.0"\n' > koja.toml
+          printf '[project]\nname = "ci"\nkoja = "0.16"\n' > koja.toml
       - uses: ./
         id: from-koja-toml
         with:
           koja-version-file: koja.toml
-      - name: Assert koja.toml version
+      - name: Assert koja.toml resolved to newest 0.16.x
         run: |
-          [ "${{ steps.from-koja-toml.outputs.koja-version }}" = "0.16.0" ]
-          koja --version | grep -F "0.16.0"
+          case "${{ steps.from-koja-toml.outputs.koja-version }}" in
+            0.16.*) ;;
+            *) echo "expected 0.16.x, got ${{ steps.from-koja-toml.outputs.koja-version }}"; exit 1 ;;
+          esac
+          koja --version | grep -F "${{ steps.from-koja-toml.outputs.koja-version }}"
 
       - name: Install latest
         id: latest

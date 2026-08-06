@@ -32,15 +32,17 @@ Read the version from a file:
 
 ## Inputs
 
-| Input               | Default        | Description                                                   |
-| ------------------- | -------------- | ------------------------------------------------------------- |
-| `koja-version`      | latest release | Exact version (for example `0.16.0`) or `latest`.             |
-| `koja-version-file` | none           | File that names the version: `.tool-versions` or `koja.toml`. |
-| `token`             | `github.token` | Token for the releases API when resolving `latest`.           |
+| Input               | Default        | Description                                                          |
+| ------------------- | -------------- | -------------------------------------------------------------------- |
+| `koja-version`      | latest release | Version to install: exact (`0.16.0`), partial (`0.16`), or `latest`. |
+| `koja-version-file` | none           | File that names the version: `.tool-versions` or `koja.toml`.        |
+| `token`             | `github.token` | Token for the releases API when resolving versions.                  |
 
 If both `koja-version` and `koja-version-file` are set, `koja-version` wins and the action prints a warning.
 
-For `koja.toml`, the action reads the `[project]` `koja` key. That key declares a minimum compiler version, and the action installs exactly that version, the same way `setup-go` treats the `go.mod` directive.
+A version like `0.16` installs the newest `0.16.x` release.
+
+For `koja.toml`, the action reads the `[project]` `koja` key, which declares a minimum compiler version.
 
 ## Outputs
 

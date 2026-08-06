@@ -82,6 +82,27 @@ latest_version() {
   echo "$tag"
 }
 
+# Expands a partial version like "0.16" or "1" to the newest release
+# that matches it, the way setup-go resolves "1.21" to 1.21.x.
+expand_partial_version() {
+  local prefix="$1" prefix_re response candidate best=""
+  prefix_re="${prefix//./\\.}"
+  response="$(curl -fsSL --retry 3 \
+    -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+    -H "Accept: application/vnd.github+json" \
+    "$GH_API/releases?per_page=100")" ||
+    fail "could not query $GH_API/releases"
+  for candidate in $(echo "$response" |
+    sed -n 's/.*"tag_name":[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' |
+    grep -E "^${prefix_re}(\.[0-9]+)+$"); do
+    if [ -z "$best" ] || version_lt "$best" "$candidate"; then
+      best="$candidate"
+    fi
+  done
+  [ -n "$best" ] || fail "no koja release matches $prefix"
+  echo "$best"
+}
+
 resolve_version() {
   local input="${KOJA_VERSION_INPUT:-}" file="${KOJA_VERSION_FILE:-}" version
   if [ -n "$input" ] && [ "$input" != "latest" ]; then
@@ -97,6 +118,9 @@ resolve_version() {
     version="$(latest_version)" || exit 1
   fi
   version="${version#v}"
+  if [[ "$version" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+    version="$(expand_partial_version "$version")" || exit 1
+  fi
   if version_lt "$version" "$MIN_VERSION"; then
     fail "koja $version predates prebuilt binaries (earliest is $MIN_VERSION)"
   fi
