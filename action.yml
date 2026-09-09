@@ -3,14 +3,15 @@ description: Install the Koja compiler toolchain and add it to PATH
 author: koja-lang
 
 branding:
-  icon: package
+  icon: download
   color: green
 
 inputs:
   koja-version:
     description: >-
-      Exact Koja version to install (for example 0.16.0), or "latest".
-      Empty means latest unless koja-version-file is set.
+      Koja version to install: exact (major.minor.patch), partial
+      (major.minor), or "latest". Empty means latest unless
+      koja-version-file is set.
     required: false
     default: ""
   koja-version-file:
@@ -21,9 +22,11 @@ inputs:
     required: false
     default: ""
   token:
-    description: GitHub token for the releases API (latest-version lookup).
+    description: >-
+      No longer used. Versions resolve through releases.kojalang.org
+      without a token. Kept so existing workflows keep working.
     required: false
-    default: ${{ github.token }}
+    default: ""
 
 outputs:
   koja-version:
@@ -41,7 +44,6 @@ runs:
       env:
         KOJA_VERSION_INPUT: ${{ inputs.koja-version }}
         KOJA_VERSION_FILE: ${{ inputs.koja-version-file }}
-        GITHUB_TOKEN: ${{ inputs.token }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/install.sh"
 
     - name: Register problem matcher

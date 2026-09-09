@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 # Installs a Koja release into the runner tool cache and puts it on
 # PATH. Inputs arrive as environment variables set by action.yml:
-#   KOJA_VERSION_INPUT   exact version, "latest", or empty
+#   KOJA_VERSION_INPUT   exact or partial version, "latest", or empty
 #   KOJA_VERSION_FILE    path to .tool-versions or koja.toml, or empty
-#   GITHUB_TOKEN         token for the GitHub releases API
+#
+# Versions resolve through the release catalog, a set of static files
+# that lists every release with prebuilt binaries.
 
 set -euo pipefail
 
 GH_REPO="https://github.com/koja-lang/koja"
-GH_API="https://api.github.com/repos/koja-lang/koja"
-
-# Earliest release that publishes prebuilt binaries.
-MIN_VERSION="0.12.1"
+CATALOG="https://releases.kojalang.org"
 
 fail() {
   echo "::error::setup-koja: $*" >&2
@@ -40,18 +39,6 @@ platform() {
   esac
 }
 
-# True when version $1 sorts before version $2 (numeric, three parts).
-version_lt() {
-  awk -v a="$1" -v b="$2" 'BEGIN {
-    split(a, x, "."); split(b, y, ".")
-    for (i = 1; i <= 3; i++) {
-      if (x[i] + 0 < y[i] + 0) exit 0
-      if (x[i] + 0 > y[i] + 0) exit 1
-    }
-    exit 1
-  }'
-}
-
 version_from_file() {
   local file="$1" version=""
   [ -f "$file" ] || fail "version file not found: $file"
@@ -70,61 +57,42 @@ version_from_file() {
   echo "$version"
 }
 
-latest_version() {
-  local response tag
-  response="$(curl -fsSL --retry 3 \
-    -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-    -H "Accept: application/vnd.github+json" \
-    "$GH_API/releases/latest")" ||
-    fail "could not query $GH_API/releases/latest"
-  tag="$(echo "$response" | sed -n 's/.*"tag_name":[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' | head -n 1)"
-  [ -n "$tag" ] || fail "could not read tag_name from the latest-release response"
-  echo "$tag"
-}
-
-# Expands a partial version like "0.16" or "1" to the newest release
-# that matches it, the way setup-go resolves "1.21" to 1.21.x.
-expand_partial_version() {
-  local prefix="$1" prefix_re response candidate best=""
-  prefix_re="${prefix//./\\.}"
-  response="$(curl -fsSL --retry 3 \
-    -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-    -H "Accept: application/vnd.github+json" \
-    "$GH_API/releases?per_page=100")" ||
-    fail "could not query $GH_API/releases"
-  for candidate in $(echo "$response" |
-    sed -n 's/.*"tag_name":[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' |
-    grep -E "^${prefix_re}(\.[0-9]+)+$"); do
-    if [ -z "$best" ] || version_lt "$best" "$candidate"; then
-      best="$candidate"
-    fi
-  done
-  [ -n "$best" ] || fail "no koja release matches $prefix"
-  echo "$best"
+# Asks the catalog for the newest release, or for the newest release
+# that matches a version. "0.16" resolves to the newest 0.16.x the
+# way setup-go resolves "1.21" to 1.21.x, and an exact version
+# resolves to itself. The catalog answers 404 for a version with no
+# release.
+resolve_remote() {
+  local requested="$1" path version
+  if [ "$requested" = "latest" ]; then
+    path="latest"
+  else
+    path="resolve/$requested"
+  fi
+  version="$(curl -fsSL --retry 3 "$CATALOG/$path")" ||
+    fail "no koja release matches $requested (asked $CATALOG/$path)"
+  [ -n "$version" ] || fail "empty response from $CATALOG/$path"
+  echo "$version"
 }
 
 resolve_version() {
-  local input="${KOJA_VERSION_INPUT:-}" file="${KOJA_VERSION_FILE:-}" version
-  if [ -n "$input" ] && [ "$input" != "latest" ]; then
+  local input="${KOJA_VERSION_INPUT:-}" file="${KOJA_VERSION_FILE:-}" requested
+  if [ -n "$input" ]; then
     if [ -n "$file" ]; then
       echo "::warning::setup-koja: both koja-version and koja-version-file are set, using koja-version $input" >&2
     fi
-    version="$input"
+    requested="$input"
   elif [ -n "$file" ]; then
     # `|| exit` because errexit does not reach into command
     # substitutions (and macOS bash 3.2 lacks inherit_errexit).
-    version="$(version_from_file "$file")" || exit 1
+    requested="$(version_from_file "$file")" || exit 1
   else
-    version="$(latest_version)" || exit 1
+    requested="latest"
   fi
-  version="${version#v}"
-  if [[ "$version" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-    version="$(expand_partial_version "$version")" || exit 1
-  fi
-  if version_lt "$version" "$MIN_VERSION"; then
-    fail "koja $version predates prebuilt binaries (earliest is $MIN_VERSION)"
-  fi
-  echo "$version"
+  requested="${requested#v}"
+  [[ "$requested" =~ ^(latest|[0-9]+(\.[0-9]+){0,2})$ ]] ||
+    fail "invalid koja version: $requested"
+  resolve_remote "$requested"
 }
 
 verify_checksum() {

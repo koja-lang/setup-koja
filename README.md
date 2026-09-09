@@ -6,12 +6,14 @@ The action downloads a prebuilt release tarball, verifies its checksum, installs
 
 ## Usage
 
+Install the version your project declares in `koja.toml`:
+
 ```yaml
 steps:
   - uses: actions/checkout@v6
   - uses: koja-lang/setup-koja@v1
     with:
-      koja-version: 0.16.0
+      koja-version-file: koja.toml
   - run: koja deps get
   - run: koja test
 ```
@@ -22,25 +24,17 @@ Install the latest release by omitting the version:
 - uses: koja-lang/setup-koja@v1
 ```
 
-Read the version from a file:
-
-```yaml
-- uses: koja-lang/setup-koja@v1
-  with:
-    koja-version-file: .tool-versions
-```
-
 ## Inputs
 
-| Input               | Default        | Description                                                          |
-| ------------------- | -------------- | -------------------------------------------------------------------- |
-| `koja-version`      | latest release | Version to install: exact (`0.16.0`), partial (`0.16`), or `latest`. |
-| `koja-version-file` | none           | File that names the version: `.tool-versions` or `koja.toml`.        |
-| `token`             | `github.token` | Token for the releases API when resolving versions.                  |
+| Input               | Default        | Description                                                                            |
+| ------------------- | -------------- | -------------------------------------------------------------------------------------- |
+| `koja-version`      | latest release | Version to install: exact (`major.minor.patch`), partial (`major.minor`), or `latest`. |
+| `koja-version-file` | none           | File that names the version: `.tool-versions` or `koja.toml`.                          |
+| `token`             | none           | No longer used. Kept so existing workflows keep working.                               |
 
 If both `koja-version` and `koja-version-file` are set, `koja-version` wins and the action prints a warning.
 
-A version like `0.16` installs the newest `0.16.x` release.
+A partial version installs the newest patch release in that line. Versions resolve through the [release catalog](https://releases.kojalang.org), so no GitHub API call or token is involved.
 
 For `koja.toml`, the action reads the `[project]` `koja` key, which declares a minimum compiler version.
 

@@ -20,6 +20,8 @@ jobs:
           docker run --rm -v "$PWD":/repo --workdir /repo \
             rhysd/actionlint:latest -color
 
+  # The versions under test come from the release catalog at run time,
+  # so the workflow never pins a number that goes stale.
   test:
     strategy:
       fail-fast: false
@@ -29,48 +31,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install pinned version
-        id: pinned
-        uses: ./
-        with:
-          koja-version: 0.16.0
-
-      - name: Assert pinned version
-        run: |
-          [ "${{ steps.pinned.outputs.koja-version }}" = "0.16.0" ]
-          koja --version | grep -F "0.16.0"
-
-      - name: Run a script
-        run: |
-          echo 'IO.puts("hello from ci")' > hello.kojs
-          [ "$(koja run hello.kojs)" = "hello from ci" ]
-
-      - name: Write .tool-versions
-        run: echo "koja 0.15.3" > .tool-versions
-      - uses: ./
-        id: from-tool-versions
-        with:
-          koja-version-file: .tool-versions
-      - name: Assert .tool-versions version
-        run: |
-          [ "${{ steps.from-tool-versions.outputs.koja-version }}" = "0.15.3" ]
-          koja --version | grep -F "0.15.3"
-
-      - name: Write koja.toml with a partial version
-        run: |
-          printf '[project]\nname = "ci"\nkoja = "0.16"\n' > koja.toml
-      - uses: ./
-        id: from-koja-toml
-        with:
-          koja-version-file: koja.toml
-      - name: Assert koja.toml resolved to newest 0.16.x
-        run: |
-          case "${{ steps.from-koja-toml.outputs.koja-version }}" in
-            0.16.*) ;;
-            *) echo "expected 0.16.x, got ${{ steps.from-koja-toml.outputs.koja-version }}"; exit 1 ;;
-          esac
-          koja --version | grep -F "${{ steps.from-koja-toml.outputs.koja-version }}"
-
       - name: Install latest
         id: latest
         uses: ./
@@ -78,3 +38,59 @@ jobs:
         run: |
           [ -n "${{ steps.latest.outputs.koja-version }}" ]
           koja --version | grep -F "${{ steps.latest.outputs.koja-version }}"
+
+      - name: Run a script
+        run: |
+          echo 'IO.puts("hello from ci")' > hello.kojs
+          [ "$(koja run hello.kojs)" = "hello from ci" ]
+
+      # `minor` is the latest major.minor line. `previous` is the newest
+      # release outside that line, so pinning it proves the pin took
+      # effect rather than falling through to latest.
+      - name: Pick versions to pin
+        id: versions
+        env:
+          LATEST: ${{ steps.latest.outputs.koja-version }}
+        run: |
+          minor="${LATEST%.*}"
+          previous="$(curl -fsSL https://releases.kojalang.org/index.json |
+            jq -r --arg minor "$minor." '[.[].version | select(startswith($minor) | not)] | .[0] // empty')"
+          [ -n "$previous" ]
+          echo "minor=$minor" >> "$GITHUB_OUTPUT"
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+
+      - name: Install pinned version
+        id: pinned
+        uses: ./
+        with:
+          koja-version: ${{ steps.versions.outputs.previous }}
+      - name: Assert pinned version
+        run: |
+          [ "${{ steps.pinned.outputs.koja-version }}" = "${{ steps.versions.outputs.previous }}" ]
+          koja --version | grep -F "${{ steps.versions.outputs.previous }}"
+
+      - name: Write .tool-versions
+        run: echo "koja ${{ steps.versions.outputs.previous }}" > .tool-versions
+      - uses: ./
+        id: from-tool-versions
+        with:
+          koja-version-file: .tool-versions
+      - name: Assert .tool-versions version
+        run: |
+          [ "${{ steps.from-tool-versions.outputs.koja-version }}" = "${{ steps.versions.outputs.previous }}" ]
+          koja --version | grep -F "${{ steps.versions.outputs.previous }}"
+
+      - name: Write koja.toml with a partial version
+        run: |
+          printf '[project]\nname = "ci"\nkoja = "%s"\n' "${{ steps.versions.outputs.minor }}" > koja.toml
+      - uses: ./
+        id: from-koja-toml
+        with:
+          koja-version-file: koja.toml
+      - name: Assert koja.toml resolved to the newest patch in its line
+        run: |
+          case "${{ steps.from-koja-toml.outputs.koja-version }}" in
+            ${{ steps.versions.outputs.minor }}.*) ;;
+            *) echo "expected ${{ steps.versions.outputs.minor }}.x, got ${{ steps.from-koja-toml.outputs.koja-version }}"; exit 1 ;;
+          esac
+          koja --version | grep -F "${{ steps.from-koja-toml.outputs.koja-version }}"
